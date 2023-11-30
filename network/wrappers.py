@@ -6,7 +6,7 @@ from flax import struct
 from functools import partial
 from typing import Optional, Tuple, Union, Any
 from gymnax.environments import environment, spaces
-from brax import envs
+# from brax import envs
 from brax.envs.wrappers.training import EpisodeWrapper, AutoResetWrapper
 
 
@@ -114,35 +114,43 @@ class LogWrapper(GymnaxWrapper):
 
 
 class BraxGymnaxWrapper:
-    def __init__(self, env_name, backend="positional"):
-        env = envs.get_environment(env_name=env_name, backend=backend)
-        env = EpisodeWrapper(env, episode_length=1000, action_repeat=1)
+    def __init__(self, env):
+        #env = envs.get_environment(env_name=env_name, backend=backend)
+        env = EpisodeWrapper(env, episode_length=200, action_repeat=1)
         env = AutoResetWrapper(env)
         self._env = env
-        self.action_size = env.action_size
-        self.observation_size = (env.observation_size,)
+        #self.action_size = env.action_size
+        #self.observation_size = (env.observation_size,)
+        #self.reset = jax.vmap(self._env.reset, in_axes=(0, None))
+        #self.step = jax.vmap(self._env.step, in_axes=(0, 0, 0, None))
 
     def reset(self, key, params=None):
-        state = self._env.reset(key)
+        state = jax.vmap(self._env.reset,(0,0))(key,params)
         return state.obs, state
 
-    def step(self, key, state, action, params=None):
-        next_state = self._env.step(state, action)
-        return next_state.obs, next_state, next_state.reward, next_state.done > 0.5, {}
+    def step(self, action, params=None):
+        obs, reward, terminated, truncated, info = jax.vmap(self._env.step)(action)
+        return obs, reward, terminated, truncated, info
 
-    def observation_space(self, params):
-        return spaces.Box(
-            low=-jnp.inf,
-            high=jnp.inf,
-            shape=(self._env.observation_size,),
-        )
+    def observation_space(self):
+        return self._env.observation_space
 
-    def action_space(self, params):
-        return spaces.Box(
-            low=-1.0,
-            high=1.0,
-            shape=(self._env.action_size,),
-        )
+    def action_space(self):
+        return self._env.action_space
+
+    # def observation_space(self, params):
+    #     return spaces.Box(
+    #         low=-jnp.inf,
+    #         high=jnp.inf,
+    #         shape=(self._env.observation_size,),
+    #     )
+
+    # def action_space(self, params):
+    #     return spaces.Box(
+    #         low=-1.0,
+    #         high=1.0,
+    #         shape=(self._env.action_size,),
+    #     )
 
 
 class ClipAction(GymnaxWrapper):
@@ -185,6 +193,7 @@ class TransformReward(GymnaxWrapper):
 class VecEnv(GymnaxWrapper):
     def __init__(self, env):
         super().__init__(env)
+
         self.reset = jax.vmap(self._env.reset, in_axes=(0, None))
         self.step = jax.vmap(self._env.step, in_axes=(0, 0, 0, None))
 
